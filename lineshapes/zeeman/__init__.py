@@ -1,0 +1,1 @@
+from .LS import LSzeeman as LS
