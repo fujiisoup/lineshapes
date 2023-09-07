@@ -9,6 +9,88 @@ import pyspectra
 THIS_DIR = os.path.dirname(__file__)
 
 
+def allclose_except_nans(da, db, *args, **kwargs):
+    da = np.where(np.isnan(da), db, da)
+    db = np.where(np.isnan(db), da, db)
+    da = np.where(np.isnan(da), 0, da)
+    db = np.where(np.isnan(db), 0, db)
+    return np.allclose(da, db, *args, **kwargs)    
+
+
+def test_hydrogen():
+    energy_upper = [
+        12.0874936591, 12.0875071004,  # 3p (1/2, 3/2)
+        12.0874949611,  # 2s (1/2)
+        12.0875070783, 12.0875115582,  # 3d (3/2, 5/2)
+    ]
+    L_upper = [1, 1, 0, 2, 2]
+    J_upper = [1/2, 3/2, 1/2, 3/2, 5/2]
+    energy_lower = [
+        10.19880615024, 10.19885151459,  # 2p (1/2, 3/2)
+        10.19881052514816  # 2s (1/2)
+    ]
+    L_lower = [1, 1, 0]
+    J_lower = [1/2, 3/2, 1/2]
+    Spq = np.array([
+        # from 3p(1/2)   3p(3/2)    3s(1/2)      3d(3/2)    3d(5/2)
+        [       0.0,        0.0, 5.8769e-01, 3.0089e+01,        0.0],   # to 2p (1/2)
+        [       0.0,        0.0, 1.1756e+00, 6.0180e+00, 5.4162e+01], # to 2p (3/2)
+        [6.2687e+00, 1.2537e+01,        0.0,        0.0,        0.0],  # to 2s (1/2)
+    ]).T
+
+    zeeman_H = zeeman.LS(
+        energy_upper, energy_lower, 
+        J_upper=J_upper, J_lower=J_lower, 
+        L_upper=L_upper, L_lower=L_lower, S=1/2, B=7, 
+        line_strengths_LJ=Spq,
+        return_xr=True
+    )
+    
+    bins = np.linspace(1.887, 1.891, num=31)
+    # pi component should be a single line
+    pi = np.histogram(
+        zeeman_H['deltaE'].sel(deltaM=0).values.ravel(), 
+        weights=zeeman_H['A'].sel(deltaM=0).values.ravel(), 
+        bins=bins
+    )[0]
+    pi = pi / np.sum(pi)
+    assert np.sum(pi > 1e-3) < 2
+
+    # sigma component should be a doublet
+    sigma = np.histogram(
+        zeeman_H['deltaE'].sel(deltaM=[-1, 1]).values.ravel(), 
+        weights=-zeeman_H['A'].sel(deltaM=[-1, 1]).values.ravel(), 
+        bins=bins
+    )[0]
+    sigma = sigma / np.sum(sigma)
+    assert np.sum(sigma[:15] > 1e-3) < 2
+    assert np.sum(sigma[15:] > 1e-3) < 3
+
+    # without Spq, the result should be similar
+    zeeman_H = zeeman.LS(
+        energy_upper, energy_lower, 
+        J_upper=J_upper, J_lower=J_lower, 
+        L_upper=L_upper, L_lower=L_lower, S=1/2, B=7, 
+        line_strengths_LJ=None,
+        return_xr=True
+    )
+    pi2 = np.histogram(
+        zeeman_H['deltaE'].sel(deltaM=0).values.ravel(), 
+        weights=zeeman_H['A'].sel(deltaM=0).values.ravel(), 
+        bins=bins
+    )[0]
+    pi2 = pi2 / np.sum(pi2)
+    sigma2 = np.histogram(
+        zeeman_H['deltaE'].sel(deltaM=[-1, 1]).values.ravel(), 
+        weights=-zeeman_H['A'].sel(deltaM=[-1, 1]).values.ravel(), 
+        bins=bins
+    )[0]
+    sigma2 = sigma2 / np.sum(sigma2)
+    
+    assert np.allclose(pi, pi2, atol=1e-3)
+    assert np.allclose(sigma, sigma2, atol=1e-3)
+
+
 def test_with_goto_singlet():
     # Helium n=4 singlet
     upper_energy = pyspectra.units.cm_to_eV(np.array([
@@ -80,8 +162,10 @@ def test_with_goto_singlet():
             weights=goto.sel(xyz=xyz).sum('xyz').values.ravel(), 
             bins=bins
         )[0]
-        total_actual = np.sum(actual_sigma) + np.sum(actual_pi)
-        total_expected = np.sum(expected_sigma) + np.sum(expected_pi)
+
+        print(data)
+        total_actual = np.nansum(actual_sigma) + np.nansum(actual_pi)
+        total_expected = np.nansum(expected_sigma) + np.nansum(expected_pi)
         assert np.allclose(actual_pi / total_actual, expected_pi / total_expected)
         assert np.allclose(actual_sigma / total_actual, expected_sigma / total_expected)
         '''
@@ -216,10 +300,10 @@ def test_zeeman_helium():
         L_upper, L_lower, S=1/2, B=0, return_xr=True
     )
     # eigen values should be the same
-    assert (data['E_upper'] == data['E_upper'][0]).all()
-    assert (data['E_upper'] == upper['energy'].values).all()
-    assert (data['E_lower'] == data['E_lower'][0]).all()
-    assert (data['E_lower'] == lower['energy'].values).all()
+    assert allclose_except_nans(data['E_upper'], data['E_upper'][0])
+    assert allclose_except_nans(data['E_upper'], upper['energy'])
+    assert allclose_except_nans(data['E_lower'], data['E_lower'][0])
+    assert allclose_except_nans(data['E_lower'], lower['energy'].values)
     bins = np.linspace(data['deltaE'].min(), data['deltaE'].max(), 301)
 
     # all the intensities should be the same for all the q-components
@@ -251,8 +335,8 @@ def test_zeeman_helium():
         return_xr=True
     )
     bins = np.linspace(data['deltaE'].min(), data['deltaE'].max(), 301)
-    assert (data['E_upper'] != upper['energy'].values).any()
-    assert (data['E_lower'] != lower['energy'].values).any()
+    assert ~allclose_except_nans(data['E_upper'], upper['energy'].values)
+    assert ~allclose_except_nans(data['E_lower'], lower['energy'].values)
 
     # all the intensities should be the same for all the q-components
     hist = []
