@@ -136,6 +136,37 @@ def test_hydrogen():
     assert np.allclose(pi, pi2, atol=1e-3)
     assert np.allclose(sigma, sigma2, atol=1e-3)
 
+    """
+    # with ignore_LS_selectionrules, the result should be similar
+    zeeman_H = zeeman.LS(
+        energy_upper, energy_lower, 
+        J_upper=J_upper, J_lower=J_lower, 
+        L_upper=L_upper, L_lower=L_lower, 
+        S_upper=1/2, S_lower=1/2, 
+        B=7, 
+        line_strengths_LJ=Spq,
+        ignore_LS_selectionrules=True,
+        return_xr=True
+    )
+    pi3 = np.histogram(
+        zeeman_H['deltaE'].sel(deltaM=0).values.ravel(), 
+        weights=zeeman_H['A'].sel(deltaM=0).values.ravel(), 
+        bins=bins
+    )[0]
+    pi3 = pi3 / np.sum(pi3)
+    sigma3 = np.histogram(
+        zeeman_H['deltaE'].sel(deltaM=[-1, 1]).values.ravel(), 
+        weights=-zeeman_H['A'].sel(deltaM=[-1, 1]).values.ravel(), 
+        bins=bins
+    )[0]
+    sigma3 = sigma3 / np.sum(sigma3)
+    import matplotlib.pyplot as plt
+    plt.plot(bins[:-1], pi3)
+    plt.plot(bins[:-1], sigma3)
+    plt.show()
+    assert np.allclose(pi, pi3, atol=1e-3)
+    assert np.allclose(sigma, sigma3, atol=1e-3)
+    """
 
 def test_with_goto_singlet():
     # Helium n=4 singlet

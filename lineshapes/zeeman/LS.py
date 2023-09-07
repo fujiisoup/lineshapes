@@ -47,8 +47,10 @@ def LSzeeman(
         Orbital angular momentum of the upper states
     L_lower: np.array with length [k], integer
         Orbital angular momentum of the lower states
-    S_upper, S_lower: Scalars
-        Spin angular momentum of the upper and lower states
+    S_upper: np.array with length [n], integer
+        Spin angular momentum of the upper states
+    S_lower: np.array with length [k], integer
+        Spin angular momentum of the lower states
     ignore_LS_selectionrules: boolean
         If True, ignore the selection rules for LS coupling, i.e., Lu - Ll = +/- 1, Su == Sl
     B: scalar
@@ -65,18 +67,19 @@ def LSzeeman(
     -------
 
     '''
-    energy_upper, J_upper, L_upper = np.broadcast_arrays(energy_upper, J_upper, L_upper)
-    energy_lower, J_lower, L_lower = np.broadcast_arrays(energy_lower, J_lower, L_lower)
+    energy_upper, J_upper, L_upper, S_upper = np.broadcast_arrays(energy_upper, J_upper, L_upper, S_upper)
+    energy_lower, J_lower, L_lower, S_lower = np.broadcast_arrays(energy_lower, J_lower, L_lower, S_lower)
 
     Mmax = np.maximum(np.max(J_upper), np.max(J_lower))
     nM = int(2 * Mmax) + 1
     iM = np.arange(nM)
     # diagonalize upper
     eig_upper, eigv_upper = np.zeros((nM, len(J_upper))), np.zeros((nM, len(J_upper), len(J_upper)))
-    for L in np.unique(L_upper):
-        Lindex = np.arange(len(L_upper))[L_upper == L]
+    print(np.unique([L_upper, S_upper], axis=1))
+    for L, S in np.unique([L_upper, S_upper], axis=1).T:
+        Lindex = np.arange(len(L_upper))[(L_upper == L) * (S_upper == S)]
         Ms, eig, eigv = diagonalize(
-            energy_upper[Lindex], J_upper[Lindex], L, S_upper, B, Mmax
+            energy_upper[Lindex], J_upper[Lindex], int(L), S, B, Mmax
         )
         # substitute the eigenvalues / eigenvectors
         eig_upper[:, Lindex] = eig
@@ -84,10 +87,10 @@ def LSzeeman(
     assert (eigv_upper > 0).any()  
 
     eig_lower, eigv_lower = np.zeros((nM, len(J_lower))), np.zeros((nM, len(J_lower), len(J_lower)))
-    for L in np.unique(L_lower):
-        Lindex = np.arange(len(L_lower))[L_lower == L]
+    for L, S in np.unique([L_lower, S_lower], axis=1).T:
+        Lindex = np.arange(len(L_lower))[(L_lower == L) * (S_lower == S)]
         Ms, eig, eigv = diagonalize(
-            energy_lower[Lindex], J_lower[Lindex], L, S_lower, B, Mmax
+            energy_lower[Lindex], J_lower[Lindex], int(L), S, B, Mmax
         )
         eig_lower[:, Lindex] = eig
         eigv_lower[(iM[:, np.newaxis, np.newaxis], Lindex[:, np.newaxis], Lindex)] = eigv
@@ -101,15 +104,15 @@ def LSzeeman(
     # to compute the line strength among J levels
     if not ignore_LS_selectionrules:
         sign = np.where(
-            (L_upper[:, np.newaxis] == L_lower + 1) * (S_upper == S_lower), +1, np.where(
-                (L_upper[:, np.newaxis] == L_lower - 1) * (S_upper == S_lower), -1, 0
+            (L_upper[:, np.newaxis] == L_lower + 1) * (S_upper[:, np.newaxis] == S_lower), +1, np.where(
+                (L_upper[:, np.newaxis] == L_lower - 1) * (S_upper[:, np.newaxis] == S_lower), -1, 0
             )
         )    
         coef = sign * (
-            (-1)**(S_upper + 1 + L_upper[:, np.newaxis] + J_lower).astype(int) * 
+            (-1)**(S_upper[:, np.newaxis] + 1 + L_upper[:, np.newaxis] + J_lower).astype(int) * 
             np.sqrt((2 * J_upper[:, np.newaxis] + 1) * (2 * J_lower + 1)) *
             py3nj.wigner6j(
-                2 * L_upper[:, np.newaxis], (2 * J_upper[:, np.newaxis]).astype(int), int(2 * S_upper),
+                2 * L_upper[:, np.newaxis], (2 * J_upper[:, np.newaxis]).astype(int), (2 * S_upper[:, np.newaxis]).astype(int),
                 (2 * J_lower).astype(int), (2 * L_lower).astype(int), 2, 
                 ignore_invalid=True
             )
@@ -117,6 +120,7 @@ def LSzeeman(
     else:
         if line_strengths_LJ is None:
             warnings.warn("line_strengths_LJ is not provided, which is recommended with 'ignore_LS_selectionrules' is True.")
+        # TODO check. This should give a similar result regardless of ignore_LS_selectionrules 
         coef = 1
                 
     if line_strengths_L is not None:
