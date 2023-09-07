@@ -52,10 +52,10 @@ def test_ignore_LS_selectionrules():
         pyspectra.refractive_index.vacuum_to_air(pyspectra.units.eV_to_nm(zeeman_Ar.sel(deltaM=[-1, 1])['deltaE'])).values.ravel(),
         weights=0.1 * zeeman_Ar['strength'].sel(deltaM=[-1, 1]).values.ravel(), bins=bins
     )[0] / 2
-    pi, sigma = pi / (pi + sigma), sigma / (pi + sigma)
-    assert np.sum(pi > 1e-4) <= 2
-    assert np.sum(sigma > 1e-4) <= 4
-    assert np.sum(sigma[:25] > 1e-4) <= 2
+    total = np.sum(pi + sigma)
+    assert np.sum(pi / total > 1e-4) <= 2
+    assert np.sum(sigma / total  > 1e-4) <= 4
+    assert np.sum(sigma[:25] / total > 1e-4) <= 2
     
 
 def test_hydrogen():
