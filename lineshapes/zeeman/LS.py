@@ -1,3 +1,4 @@
+import warnings
 import numpy as np
 import pyspectra
 import py3nj
@@ -22,10 +23,11 @@ def LSzeeman(
     energy_upper, energy_lower,
     J_upper, J_lower,
     L_upper, L_lower,
-    S, 
+    S_upper, S_lower, 
     B,
     line_strengths_LJ=None,
     line_strengths_L=None,
+    ignore_LS_selectionrules=False,
     return_xr=False,
 ):
     r'''
@@ -45,8 +47,10 @@ def LSzeeman(
         Orbital angular momentum of the upper states
     L_lower: np.array with length [k], integer
         Orbital angular momentum of the lower states
-    S: Scalar
-        Spin angular momentum of the upper and lower states (assumed to be the same)
+    S_upper, S_lower: Scalars
+        Spin angular momentum of the upper and lower states
+    ignore_LS_selectionrules: boolean
+        If True, ignore the selection rules for LS coupling, i.e., Lu - Ll = +/- 1, Su == Sl
     B: scalar
         magnetic field strength
     line_strengths_LJ, line_strengths_L:
@@ -72,7 +76,7 @@ def LSzeeman(
     for L in np.unique(L_upper):
         Lindex = np.arange(len(L_upper))[L_upper == L]
         Ms, eig, eigv = diagonalize(
-            energy_upper[Lindex], J_upper[Lindex], L, S, B, Mmax
+            energy_upper[Lindex], J_upper[Lindex], L, S_upper, B, Mmax
         )
         # substitute the eigenvalues / eigenvectors
         eig_upper[:, Lindex] = eig
@@ -83,7 +87,7 @@ def LSzeeman(
     for L in np.unique(L_lower):
         Lindex = np.arange(len(L_lower))[L_lower == L]
         Ms, eig, eigv = diagonalize(
-            energy_lower[Lindex], J_lower[Lindex], L, S, B, Mmax
+            energy_lower[Lindex], J_lower[Lindex], L, S_lower, B, Mmax
         )
         eig_lower[:, Lindex] = eig
         eigv_lower[(iM[:, np.newaxis, np.newaxis], Lindex[:, np.newaxis], Lindex)] = eigv
@@ -95,16 +99,26 @@ def LSzeeman(
         line_strengths_L = 1.0
 
     # to compute the line strength among J levels
-    sign = np.where(L_upper[:, np.newaxis] == L_lower + 1, +1, np.where(L_upper[:, np.newaxis] == L_lower - 1, -1, 0))    
-    coef = sign * (
-        (-1)**(S + 1 + L_upper[:, np.newaxis] + J_lower).astype(int) * 
-        np.sqrt((2 * J_upper[:, np.newaxis] + 1) * (2 * J_lower + 1)) *
-        py3nj.wigner6j(
-            2 * L_upper[:, np.newaxis], (2 * J_upper[:, np.newaxis]).astype(int), int(2 * S),
-            (2 * J_lower).astype(int), (2 * L_lower).astype(int), 2, 
-            ignore_invalid=True
+    if not ignore_LS_selectionrules:
+        sign = np.where(
+            (L_upper[:, np.newaxis] == L_lower + 1) * (S_upper == S_lower), +1, np.where(
+                (L_upper[:, np.newaxis] == L_lower - 1) * (S_upper == S_lower), -1, 0
+            )
+        )    
+        coef = sign * (
+            (-1)**(S_upper + 1 + L_upper[:, np.newaxis] + J_lower).astype(int) * 
+            np.sqrt((2 * J_upper[:, np.newaxis] + 1) * (2 * J_lower + 1)) *
+            py3nj.wigner6j(
+                2 * L_upper[:, np.newaxis], (2 * J_upper[:, np.newaxis]).astype(int), int(2 * S_upper),
+                (2 * J_lower).astype(int), (2 * L_lower).astype(int), 2, 
+                ignore_invalid=True
+            )
         )
-    )
+    else:
+        if line_strengths_LJ is None:
+            warnings.warn("line_strengths_LJ is not provided, which is recommended with 'ignore_LS_selectionrules' is True.")
+        coef = 1
+                
     if line_strengths_L is not None:
         ls = coef * np.sqrt(line_strengths_L)
     # confirmed 
@@ -169,7 +183,7 @@ def LSzeeman(
             'L_lower': ('lower', L_lower),
             'mixing_upper': (('M', 'upper', 'upper0'), eigv_upper),
             'mixing_lower': (('M', 'lower', 'lower0'), eigv_lower),
-            'S': S, 'B': ((), B, {'units': 'T'}), 'M': Ms, 
+            'S_upper': S_upper, 'S_lower': S_lower, 'B': ((), B, {'units': 'T'}), 'M': Ms, 
         })        
     return energy, intensity
 

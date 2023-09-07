@@ -17,6 +17,47 @@ def allclose_except_nans(da, db, *args, **kwargs):
     return np.allclose(da, db, *args, **kwargs)    
 
 
+def test_ignore_LS_selectionrules():
+    energy_upper = [19.30534490, 19.261084163, 19.222902151]  # 4p 4P
+    L_upper = [1, 1, 1]
+    J_upper = [1/2, 3/2, 5/2]
+    energy_lower = [16.81247225, 16.74852891, 16.64385439]  # 4s 4P
+    L_lower = [1, 1, 1]
+    J_lower = [1/2, 3/2, 5/2]
+    Spq = np.array([
+        # from 4p(1/2)   4p(3/2)    4p(5/2)
+        [ 1.2e+00, 5.72e+00,      0.0],  # to 4s (1/2)
+        [9.56e+00, 3.42e+00, 5.63e+00],  # to 4s (3/2)
+        [     0.0, 1.22e+01, 2.57e+01],  # to 4s (5/2)
+    ]).T
+
+    zeeman_Ar = zeeman.LS(
+        energy_upper, energy_lower, 
+        J_upper=J_upper, J_lower=J_lower, 
+        L_upper=L_upper, L_lower=L_lower, S_upper=3/2, S_lower=3/2, B=1, 
+        line_strengths_LJ=Spq,
+        ignore_LS_selectionrules=True,
+        return_xr=True
+    )
+
+    wl = 473.58
+    bins = np.linspace(wl - 0.1, wl + 0.1, 51)
+    bins_center = (bins[:-1] + bins[1:]) / 2
+    
+    pi = np.histogram(
+        pyspectra.refractive_index.vacuum_to_air(pyspectra.units.eV_to_nm(zeeman_Ar.sel(deltaM=0)['deltaE'])).values.ravel(),
+        weights=0.1 * zeeman_Ar['strength'].sel(deltaM=0).values.ravel(), bins=bins
+    )[0]
+    sigma = np.histogram(
+        pyspectra.refractive_index.vacuum_to_air(pyspectra.units.eV_to_nm(zeeman_Ar.sel(deltaM=[-1, 1])['deltaE'])).values.ravel(),
+        weights=0.1 * zeeman_Ar['strength'].sel(deltaM=[-1, 1]).values.ravel(), bins=bins
+    )[0] / 2
+    pi, sigma = pi / (pi + sigma), sigma / (pi + sigma)
+    assert np.sum(pi > 1e-4) <= 2
+    assert np.sum(sigma > 1e-4) <= 4
+    assert np.sum(sigma[:25] > 1e-4) <= 2
+    
+
 def test_hydrogen():
     energy_upper = [
         12.0874936591, 12.0875071004,  # 3p (1/2, 3/2)
@@ -41,7 +82,9 @@ def test_hydrogen():
     zeeman_H = zeeman.LS(
         energy_upper, energy_lower, 
         J_upper=J_upper, J_lower=J_lower, 
-        L_upper=L_upper, L_lower=L_lower, S=1/2, B=7, 
+        L_upper=L_upper, L_lower=L_lower, 
+        S_upper=1/2, S_lower=1/2, 
+        B=7, 
         line_strengths_LJ=Spq,
         return_xr=True
     )
@@ -54,7 +97,6 @@ def test_hydrogen():
         bins=bins
     )[0]
     pi = pi / np.sum(pi)
-    assert np.sum(pi > 1e-3) < 2
 
     # sigma component should be a doublet
     sigma = np.histogram(
@@ -63,6 +105,8 @@ def test_hydrogen():
         bins=bins
     )[0]
     sigma = sigma / np.sum(sigma)
+    import matplotlib.pyplot as plt
+    assert np.sum(pi > 1e-3) < 2
     assert np.sum(sigma[:15] > 1e-3) < 2
     assert np.sum(sigma[15:] > 1e-3) < 3
 
@@ -70,7 +114,9 @@ def test_hydrogen():
     zeeman_H = zeeman.LS(
         energy_upper, energy_lower, 
         J_upper=J_upper, J_lower=J_lower, 
-        L_upper=L_upper, L_lower=L_lower, S=1/2, B=7, 
+        L_upper=L_upper, L_lower=L_lower, 
+        S_upper=1/2, S_lower=1/2, 
+        B=7, 
         line_strengths_LJ=None,
         return_xr=True
     )
@@ -123,7 +169,7 @@ def test_with_goto_singlet():
     data = zeeman.LS(
         upper_energy, lower_energy, 
         upper_J, lower_J, upper_L, lower_L,
-        S=0, B=goto['Bfield'].item(), line_strengths_L=line_strengths_L, 
+        S_upper=0, S_lower=0, B=goto['Bfield'].item(), line_strengths_L=line_strengths_L, 
         return_xr=True
     )
     
@@ -223,7 +269,8 @@ def test_with_goto_triplet():
     data = zeeman.LS(
         upper_energy, lower_energy, 
         upper_J, lower_J, upper_L, lower_L,
-        S=1, B=goto['Bfield'].item(), line_strengths_L=line_strengths_L, 
+        S_upper=1, S_lower=1, 
+        B=goto['Bfield'].item(), line_strengths_L=line_strengths_L, 
         return_xr=True
     )
     
@@ -297,7 +344,7 @@ def test_zeeman_helium():
     data = zeeman.LS(
         upper['energy'].values, lower['energy'].values, 
         upper['J'].values / 2, lower['J'] / 2, 
-        L_upper, L_lower, S=1/2, B=0, return_xr=True
+        L_upper, L_lower, S_upper=1/2, S_lower=1/2, B=0, return_xr=True
     )
     # eigen values should be the same
     assert allclose_except_nans(data['E_upper'], data['E_upper'][0])
@@ -316,7 +363,7 @@ def test_zeeman_helium():
     data = zeeman.LS(
         upper['energy'].values, lower['energy'].values, 
         upper['J'].values / 2, lower['J'] / 2, 
-        L_upper, L_lower, S=1/2, B=0, line_strengths_LJ=line_strength,
+        L_upper, L_lower, S_upper=1/2, S_lower=1/2, B=0, line_strengths_LJ=line_strength,
         return_xr=True
     )
 
@@ -331,7 +378,7 @@ def test_zeeman_helium():
     data = zeeman.LS(
         upper['energy'].values, lower['energy'].values, 
         upper['J'].values / 2, lower['J'] / 2, 
-        L_upper, L_lower, S=1/2, B=10.0, line_strengths_LJ=line_strength,
+        L_upper, L_lower, S_upper=1/2, S_lower=1/2, B=10.0, line_strengths_LJ=line_strength,
         return_xr=True
     )
     bins = np.linspace(data['deltaE'].min(), data['deltaE'].max(), 301)
@@ -365,7 +412,7 @@ def _test_zeeman_hydrogen():
     data = zeeman.LS(
         upper_energy, lower_energy,
         upper_J, lower_J, upper_L, lower_L,
-        S=1/2, B=B, return_xr=True
+        S_upper=1/2, S_lower=1/2, B=B, return_xr=True
     )
     # eigen values should be the same
     assert (data['E_upper'] == data['E_upper'][0]).all()
@@ -384,7 +431,7 @@ def _test_zeeman_hydrogen():
     data = zeeman.LS(
         upper_energy, lower_energy,
         upper_J, lower_J, upper_L, lower_L,
-        S=1/2, B=B, line_strengths_LJ=line_strengths, return_xr=True
+        S_upper=1/2, S_lower=1/2, B=B, line_strengths_LJ=line_strengths, return_xr=True
     )
     # all the intensities should be the same for all the q-components
     hist = []
@@ -398,7 +445,7 @@ def _test_zeeman_hydrogen():
     data = zeeman.LS(
         upper_energy, lower_energy,
         upper_J, lower_J, upper_L, lower_L,
-        S=1/2, B=B, line_strengths_LJ=line_strengths, return_xr=True
+        S_upper=1/2, S_lower=1/2, B=B, line_strengths_LJ=line_strengths, return_xr=True
     )
     data['deltaE'] = pyspectra.refractive_index.vacuum_to_air(pyspectra.units.eV_to_nm(data['deltaE']))
     bins = np.linspace(data['deltaE'].min(), data['deltaE'].max(), 101)
