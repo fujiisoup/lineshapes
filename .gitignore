@@ -131,8 +131,9 @@ dmypy.json
 # build
 build
 
-# script from goto
-goto
+# script from goto, which is hidden here, except for the output
+goto/*
+!goto/stark_zeeman.txt
 
 # vscode
 *.code-wrokspace
