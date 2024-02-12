@@ -29,6 +29,7 @@ def LSzeeman(
     line_strengths_L=None,
     ignore_LS_selectionrules=False,
     return_xr=False,
+    observation_angle=None
 ):
     r'''
     Calculates Zeeman pattern
@@ -75,7 +76,6 @@ def LSzeeman(
     iM = np.arange(nM)
     # diagonalize upper
     eig_upper, eigv_upper = np.zeros((nM, len(J_upper))), np.zeros((nM, len(J_upper), len(J_upper)))
-    print(np.unique([L_upper, S_upper], axis=1))
     for L, S in np.unique([L_upper, S_upper], axis=1).T:
         Lindex = np.arange(len(L_upper))[(L_upper == L) * (S_upper == S)]
         Ms, eig, eigv = diagonalize(
@@ -187,7 +187,8 @@ def LSzeeman(
             'L_lower': ('lower', L_lower),
             'mixing_upper': (('M', 'upper', 'upper0'), eigv_upper),
             'mixing_lower': (('M', 'lower', 'lower0'), eigv_lower),
-            'S_upper': S_upper, 'S_lower': S_lower, 'B': ((), B, {'units': 'T'}), 'M': Ms, 
+            'S_upper': ('upper', S_upper), 'S_lower': ('lower', S_lower), 
+            'B': ((), B, {'units': 'T'}), 'M': Ms, 
         })        
     return energy, intensity
 
@@ -246,6 +247,7 @@ def diagonalize(E, J, L, S, B, Mmax):
 
     Hpert = np.sum(cg2 * (gL * two_ML / 2 + gS * two_MS / 2), axis=(1, 2))
 
+    '''
     eig, eigv = np.linalg.eigh(H0 + -uB * B * Hpert)
     
     # This should be equivalent to the below, but in the vectorized manner
@@ -271,7 +273,7 @@ def diagonalize(E, J, L, S, B, Mmax):
                 )
         H.append(H0 + Hpert)
     eig, eigv = np.linalg.eigh(np.stack(H, axis=0))
-    '''
+    #'''
     # put np.nan for nonexisting levels
     index = np.abs(MJ) > np.abs(L + S)
     eig[index] = np.nan
